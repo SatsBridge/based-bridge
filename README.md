@@ -1,6 +1,10 @@
-## Foundry
+## AMM-Based Bridge
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+**AMM Lightning Network Bridge for EVM protocols**
+
+The architecture relies on using Uniswap v4 hooks for adopting bridge fee and two tokens one liquid token
+which is backed by channel liquidity and another one which is minted when channel closes and backed by
+remaining onchain UTXO controlled by the bridge node.
 
 Foundry consists of:
 
@@ -49,12 +53,6 @@ $ anvil
 
 ```shell
 $ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
 ```
 
 ### Help

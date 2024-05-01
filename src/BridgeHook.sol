@@ -15,12 +15,25 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 
 import {Hooks} from "v4-core/libraries/Hooks.sol";
 
-contract HashedTimelockHook is BaseHook, ReentrancyGuard, Ownable {
+contract BridgeHook is BaseHook, ReentrancyGuard, Ownable {
     using CurrencyLibrary for Currency;
     using BalanceDeltaLibrary for BalanceDelta;
 
+    // pending bridge contracts
     mapping (bytes32 => LockContract) public contracts;
-    int24 feeProportional;
+    // default base fee on the bridge analogous to base fee in LN
+    uint24 public constant BASE_FEE = 5000; // sats
+    // default base fee on the bridge analogous to base fee in LN
+    uint24 feeProportional = 5000; // 0.5%
+
+
+    constructor(
+        IPoolManager _manager,
+        address initialOwner,
+        uint24 initialFeeProportional
+    ) BaseHook(_manager) Ownable(initialOwner) {
+        feeProportional = initialFeeProportional;
+    }
 
     event HTLCERC20New(
         address indexed sender,
@@ -38,8 +51,7 @@ contract HashedTimelockHook is BaseHook, ReentrancyGuard, Ownable {
         address receiver;
         address tokenContract;
         uint256 amount;
-        // locked UNTIL this time. Unit depends on consensus algorithm.
-        // PoA, PoA and IBFT all use seconds. But Quorum Raft uses nano-seconds
+        // locked UNTIL this time
         uint256 timelock;
         bool withdrawn;
         bool refunded;
@@ -196,14 +208,6 @@ contract HashedTimelockHook is BaseHook, ReentrancyGuard, Ownable {
         exists = (contracts[_hashlock].sender != address(0));
     }
 
-    constructor(
-        IPoolManager _manager,
-        address initialOwner,
-        int24 initialFeeProportional
-    ) BaseHook(_manager) Ownable(initialOwner) {
-        feeProportional = initialFeeProportional;
-    }
-
     // Set up hook permissions to return `true`
     // for the two hook functions we are using
     function getHookPermissions()
@@ -235,7 +239,19 @@ contract HashedTimelockHook is BaseHook, ReentrancyGuard, Ownable {
         BalanceDelta delta,
         bytes calldata hookData
     ) external override poolManagerOnly returns (bytes4) {
-        // We'll add more code here shortly
+        // TODO: add token0 currency check
+        if (key.currency0.isNative()) return this.afterSwap.selector;
+        //if (!swapParams.zeroForOne) return this.afterSwap.selector;
+
+        uint256 ethSpendAmount = swapParams.amountSpecified < 0
+        ? uint256(-swapParams.amountSpecified)
+        : uint256(int256(-delta.amount0()));
+        uint256 pointsForSwap = ethSpendAmount / 5;
+
+        // TODO: add fee change logic
+        uint24 newFee = feeProportional*2;
+        _changeFee(hookData, newFee);
+
         return this.afterSwap.selector;
     }
 
@@ -247,7 +263,23 @@ contract HashedTimelockHook is BaseHook, ReentrancyGuard, Ownable {
         BalanceDelta delta,
         bytes calldata hookData
     ) external override poolManagerOnly returns (bytes4) {
-        // We'll add more code here shortly
+        // TODO: add token0 currency check
+        if (key.currency0.isNative()) return this.afterSwap.selector;
+
+        uint256 pointsForAddingLiquidity = uint256(int256(-delta.amount0()));
+
+        // TODO: add fee change logic
+        uint24 newFee = feeProportional*2;
+        _changeFee(hookData, newFee);
+
         return this.afterAddLiquidity.selector;
+    }
+
+    function _changeFee(
+        bytes calldata hookData,
+        uint24 fee
+    ) internal {
+        if (hookData.length == 0) return;
+        feeProportional = fee;
     }
 }
